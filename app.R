@@ -6,10 +6,6 @@ library(timeDate)
 library(dplyr)
 library(zoo)
 
-
-# Source helpers ----
-#source("timeSeries.R")
-
 # Define UI for data upload app ----
 ui <- fluidPage(
 
@@ -32,36 +28,43 @@ ui <- fluidPage(
 			  # Horizontal line ----
 				tags$hr(),
 				
-				# Input: column value ----
-				selectInput("opt", "Select a column:",choices = c('select','open','high','low','close','volume'),selected = 'open'),
+			  # Input: Select a column ----
+				selectInput("ohlcv", "Select a column:",
+							choices = c('select','open','high','low','close','volume'),
+							selected = 'select'),
 				
+			  # Horizontal line ----
 				tags$hr(),
 
 			  # Input: Select a graph ----
-				selectInput("graphs", "Select a graph:",choices = c('Select','TimeSeries','DecomposedSeries','DifferencedSeries'),selected = 'Select'),
+				selectInput("graphs", "Select a graph:",
+							choices = c('Select','TimeSeries','DecomposedSeries','DifferencedSeries'),
+							selected = 'Select'),
 		
 			  # Horizontal line ----
 				tags$hr(),
 
 			  # Input: Select a test ----
-				selectInput("testobj", "Select ADF test for Stationarity:",choices = c('Select','Actual','Differenced'),selected = 'Select'),
+				selectInput("tests", "Select ADF test for Stationarity:",
+							choices = c('Select','Actual','Differenced'),
+							selected = 'Select'),
 
 			  # Horizontal line ----
 				tags$hr(),
 				
-
 			  # Input: Enter Lag value ----
-				numericInput("pacflags", "Lags", value="0"),
+				numericInput("lags", "Lags", value="0"),
 	  
 			  # Horizontal line ----
 				tags$hr(),
 				
-				# Input: ACF/PACF ----
-				selectInput("acfpobj", "Select a correlation function:",choices = c('Select','PACF-Actual','PACF-Differenced','ACF-Actual','ACF-Differenced'),selected = 'Select'),
+			  # Input: ACF/PACF ----
+				selectInput("acfp", "Select a correlation function:",
+							choices = c('Select','PACF-Actual','PACF-Differenced','ACF-Actual',	'ACF-Differenced'),
+							selected = 'Select'),
 				
-				# Horizontal line ----
+			  # Horizontal line ----
 				tags$hr(),
-	  
 
 			  # Input: Enter P,D,Q value ----
 				numericInput("pval", "P", value=""),
@@ -71,21 +74,24 @@ ui <- fluidPage(
 			  # Horizontal line ----
 				tags$hr(),
 	  
-				# Input: ARIMA ----
-				selectInput("arimaobj", "Select a model:",choices = c('Select','ARIMA'),selected = 'Select'),
-				
-      
+			  # Input: ARIMA ----
+				selectInput("arima", "Select a model:",
+							choices = c('Select','ARIMA'),
+							selected = 'Select'),
+				      
 			  # Horizontal line ----
 				tags$hr(),
 	  
 			  # Input: Enter number of days value ----
-				numericInput("fndays", "Number of days to forecast:", value=0),
+				numericInput("ndays", "Number of days to forecast:", value=0),
 	  
 			  # Horizontal line ----
 				tags$hr(),
 	  
-				# Input: Forecast ----
-				selectInput("fcobj", "Select to Forecast:",choices = c('Select','Forecast-Plot','Forecast-Values','Forecast-Residuals'), selected = 'Select')
+			  # Input: Forecast ----
+				selectInput("forecast", "Select to Forecast:",
+							choices = c('Select','Forecast-Plot','Forecast-Values'), 
+							selected = 'Select')
 
 			),
 
@@ -93,17 +99,14 @@ ui <- fluidPage(
 			mainPanel(
 
 			  # Output: Data file ----
-			  tableOutput("head"),
+				tableOutput("dataTable"),
 				plotOutput("graphs"),
 				verbatimTextOutput('adf'),
 				plotOutput("acfpacf"),
-				verbatimTextOutput('arimaop'),
-				plotOutput("fplot"),
-				tableOutput('fout'),
-				plotOutput("fres")
-				# plotOutput("tests"),
-				# plotOutput("nDays")
-
+				verbatimTextOutput('arimaPlot'),
+				plotOutput("forecastPlot"),
+				tableOutput('forecastTable')
+				
 			)
 
 		)
@@ -113,198 +116,184 @@ ui <- fluidPage(
 # Define server logic to read selected file ----
 server <- function(input, output) {
 	
-	# output$msg <- renderText(input$getContents,{
-		
-			# "Uploaded successfully"
-		
-	# })
-	
-  output$head <- renderTable({
+	getContents <- reactive({
 	  # input$upload_file will be NULL initially. After the user selects and uploads a file
-
 		req(input$upload_file)
-	  dt <<- read.csv(input$upload_file$datapath)
-		return(head(dt))
+		uf <<- read.csv(input$upload_file$datapath)
+		uf[is.na(uf)] <- 0
+		uf$date <- as.Date(uf$date, format = "%Y-%m-%d")
+		return(uf)
+	})
+	
+	output$dataTable <- renderTable({		
+		head(getContents())
 	})
 	
 	output$graphs <- renderPlot({
-	  dt[is.na(dt)] <- 0
-	  dt$date <- as.Date(dt$date, format = "%Y-%m-%d")
-	  wd <<- getWorkingdates()
-	  cv <- "open"
-	  cv <- toString(getColOpt(input$opt))
-	  its <<- create_ts(which(colnames(dt) == cv),wd)
-	  vec <<- dt[,which(colnames(dt) == cv)]
-	  itsDiff_1 <<- diff(its, differences=1)
+		its <<- create_ts(which(colnames(getContents()) == getColOpt(input$ohlcv)),getWorkingdates())
+		actualSeries <<- getContents()[,which(colnames(getContents()) == getColOpt(input$ohlcv))]
+		differncedSeries <<- diff(its, differences=1)
 	  
-	  if(input$graphs == 'TimeSeries'){
-	    plot.ts(its, main = "Time-Series plot", col = "blue")
-	  }
-	  else if(input$graphs == 'DecomposedSeries'){
-	    ty <- checkAddMul(its)
-	    itscomp<- decompose(its,ty)
-	    plot(itscomp)
-	  }
-	  else if(input$graphs == 'DifferencedSeries'){
-	    plot.ts(itsDiff_1,col = "blue",main = "Differenced Time Series")
-	  }
+		if(input$graphs == 'TimeSeries'){
+			plot.ts(its, main = "Time-Series plot", col = "blue")
+		} else if(input$graphs == 'DecomposedSeries'){
+			stldecomp = stl(its, s.window="periodic")
+			plot(stldecomp)
+		} else if(input$graphs == 'DifferencedSeries'){
+			plot.ts(differncedSeries,col = "blue")
+		}
 	})
 	
 	output$adf <- renderText({ 
-	  if(input$testobj == 'Actual'){
-	    ##  Augmented Dickey-Fuller Test for Stationarity
-	    a <- adftest(0)
-	    paste(a$method," for actual time series"," P-Value:",a$p.value)
-	    }
-	  else if(input$testobj == 'Differenced'){
-	    a <- adftest(1)
-	    paste(a$method," for differenced time series"," P-Value:",a$p.value)
-	  }
-	  })
+	  ##  Augmented Dickey-Fuller Test for Stationarity
+		if(input$tests == 'Actual'){
+			a <- adftest(0)
+			paste(a$method,"for actual time series"," P-Value:",a$p.value)
+	    } else if(input$tests == 'Differenced'){
+			a <- adftest(1)
+			paste(a$method,"for differenced time series"," P-Value:",a$p.value)
+		}
+	})
 	
 	output$acfpacf <- renderPlot({
-	  if(input$acfpobj == 'PACF-Actual'){
-	    pacf(vec, lag.max=input$pacflags,main = "PACF of Time Series")
-	  }
-	  else if(input$acfpobj == 'PACF-Differenced'){
-	    pacf(itsDiff_1, lag.max=input$pacflags,main = "PACF of Differenced Series")
-	  }
-	  else if(input$acfpobj == 'ACF-Actual'){
-	    acf(vec, lag.max=input$pacflags,main = "ACF of Time Series")
-	  }
-	  else if(input$acfpobj == 'ACF-Differenced'){
-	    acf(itsDiff_1, lag.max=input$pacflags,main = "ACF of Differenced Series")
-	  }
+		if(input$acfp == 'PACF-Actual'){
+			pacf(actualSeries, lag.max=input$lags)
+		} else if(input$acfp == 'PACF-Differenced'){
+			pacf(differncedSeries, lag.max=input$lags)
+		} else if(input$acfp == 'ACF-Actual'){
+			acf(actualSeries, lag.max=input$lags)
+		} else if(input$acfp == 'ACF-Differenced'){
+			pacf(differncedSeries, lag.max=input$lags)
+		}
 	})
 	
-	output$arimaop <- renderText({ 
-	  if(input$arimaobj == 'ARIMA'){
-	    ##  Augmented Dickey-Fuller Test for Stationarity
-	    amv <<- arimafun()
-	    paste("AIC:",amv$aic," AICc:",amv$aicc," BIC:",amv$bic)
-	  }
+	output$arimaPlot <- renderText({ 
+		if(input$arima == 'ARIMA'){
+	      ##  Augmented Dickey-Fuller Test for Stationarity
+			amv <<- arimafunc()
+			paste("AIC:",amv$aic," AICc:",amv$aicc," BIC:",amv$bic)
+		}
 	})
 	
-	output$fplot <- renderPlot({
-	  if(input$fcobj != 'Select'){
-	    fc <<- forecastfun()
-	    plot(fc, col = "darkgreen")
-	  }
+	output$forecastPlot <- renderPlot({
+		if(input$forecast == 'Forecast-Plot'){
+			if(input$ndays == 0){
+				error()
+			} else {
+				fc <<- forecastfunc()
+				plot(fc, col = "darkgreen")
+			}
+		}
 	})
 	
-	output$fout <- renderTable({ 
-	  if(input$fcobj == 'Forecast-Values'){
-	    yy <- fc$mean
-	    cd <- data.frame(ForecastedPrice = c(yy))
-	    return(cd)
-	  }
+	output$forecastTable <- renderTable({
+		if(input$forecast == 'Forecast-Values'){
+			if(input$ndays == 0){
+				error()
+			} else {
+				yy <- fc$mean
+				cd <- data.frame(ForecastedPrice = c(yy))
+				return(cd)
+			}
+		}
 	})
 	
-	output$fres <- renderPlot({
-	  if(input$fcobj == 'Forecast-Residuals'){
-	    hist(fc$residuals,main = "Forecast Residuals",col='lightblue')
-	  }
-	})
+	error <- function(){
+		print("enter valid input")
+	}
 	
 	output$value <- renderText({ input$lags })
 	output$value <- renderText({ input$pval })
 	output$value <- renderText({ input$qval })
 	output$value <- renderText({ input$dval })
-	output$value <- renderText({ input$fndays })
+	output$value <- renderText({ input$ndays })
 	
 	
 	## other functions
+	
 	getWorkingdates <- function(){
-	  dates <- seq(as.Date("2013-02-08"),as.Date("2018-02-07"),by = "day")
-	  week_days <- dates[!is.weekend(dates)]
-	  working_days <- week_days[!getUSHolidays(week_days)]
-	  return(working_days)
+		dates <- seq(as.Date("2013-02-08"),as.Date("2018-02-07"),by = "day")
+		week_days <- dates[!is.weekend(dates)]
+		workingdates <- week_days[!getUSHolidays(week_days)]
+		return(workingdates)
 	}
 	
-	is.weekend <- function(x) ((as.numeric(x)-2) %% 7) < 2
+	is.weekend <- function(x) {
+		((as.numeric(x)-2) %% 7) < 2
+	}
 	
 	getUSHolidays <- function(x) {
-	  years = as.POSIXlt(x)$year+1900
-	  years = unique(years)
-	  holidays <- NULL
-	  for (y in years) {
-	    if (y >= 1885)
-	      holidays <- c(holidays, as.character(USNewYearsDay(y)))
-	    if (y >= 1885)
-	      holidays <- c(holidays, as.character(USIndependenceDay(y)))
-	    if (y >= 1885)
-	      holidays <- c(holidays, as.character(USThanksgivingDay(y)))
-	    if (y >= 1885)
-	      holidays <- c(holidays, as.character(USChristmasDay(y)))
-	  }
-	  holidays = as.Date(holidays,format="%Y-%m-%d")
-	  ans = x %in% holidays
-	  return(ans)
+		years = as.POSIXlt(x)$year+1900
+		years = unique(years)
+		holidays <- NULL
+		for (y in years) {
+			if (y >= 1885)
+				holidays <- c(holidays, as.character(USNewYearsDay(y)))
+			if (y >= 1885)
+				holidays <- c(holidays, as.character(USIndependenceDay(y)))
+			if (y >= 1885)
+				holidays <- c(holidays, as.character(USThanksgivingDay(y)))
+			if (y >= 1885)
+				holidays <- c(holidays, as.character(USChristmasDay(y)))
+		}
+		holidays = as.Date(holidays,format="%Y-%m-%d")
+		ans = x %in% holidays
+		return(ans)
 	}
 	
-	create_ts <- function(col_idx,wd){
+	getColOpt <- function(cv){
+		if(cv == 'select'){
+			print("Choose a column")
+		} else if(cv == 'open'){
+			return("open")
+		} else if(cv == 'high'){
+			return("high")
+		} else if(cv == 'low'){
+			return("low")
+		} else if(cv == 'close'){
+			return("close")
+		} else if(cv == 'volume'){
+			return("volume")
+		}
+	}
+	
+	create_ts <- function(col_idx, wd){
+		wd <- getWorkingdates()
 	  ## Create a time series object
-	  i_ts <- as.numeric(dt[,col_idx]) %>%
-	    tsclean(replace.missing = TRUE, lambda = NULL) %>%
-	    ts(start = c(2013, as.numeric(format(wd[1], "%j"))),
-	       frequency = 257)
-	  return(i_ts)
+		if (input$ohlcv == 'select'){
+			print("select please")
+		} else {
+			i_ts <- as.numeric(getContents()[,col_idx]) %>%
+			tsclean(replace.missing = TRUE, lambda = NULL) %>%
+			ts(start = c(2013, as.numeric(format(wd[1], "%j"))),
+			frequency = 257)
+			return(i_ts)
+		}
 	}
 	
-	adftest <- function(t){
-	  if(t==0){
-	    adfa <- adf.test(vec, alternative = "stationary", k = trunc((length(actualSeries)-1)^(1/3)))
+	adftest <- function(a){
+	  if(a==0){
+	    adfa <- adf.test(actualSeries, alternative = "stationary", k = trunc((length(actualSeries)-1)^(1/3)))
 	    return(adfa)
 	  }
-	  else if(t==1)
+	  else if(a==1)
 	  {
-	    adfd <- adf.test(itsDiff_1, alternative = "stationary", k = trunc((length(differncedSeries)-1)^(1/3)))
+	    adfd <<- adf.test(differncedSeries, alternative = "stationary", k = trunc((length(differncedSeries)-1)^(1/3)))
 	    return(adfd)
 	  }
-	
 	  }
 	
-	arimafun <- function(){
-	  M_arima <- Arima(vec, order=c(input$pval,input$dval,input$qval),seasonal = list(order = c(input$pval,input$dval,input$qval)))
+	arimafunc <- function(){
+	  M_arima <- Arima(actualSeries, order=c(input$pval,input$dval,input$qval),
+						seasonal = list(order = c(input$pval,input$dval,input$qval)))
 	  return(M_arima)
 	}
 	
-	forecastfun <- function(){
-	  Mforecasts <- forecast(amv, h = input$fndays)
-	  return(Mforecasts)
+	forecastfunc <- function(){
+			Mforecasts <- forecast(amv, h = input$ndays)
+			return(Mforecasts)
 	}
-	
-	getColOpt <- function(cn){
-	  if(cn == 'open'){
-	    return("open")
-	  }
-	  else if(cn == 'high'){
-	    return("high")
-	  }
-	  else if(cn == 'low'){
-	    return("low")
-	  }
-	  else if(cn == 'close'){
-	    return("close")
-	  }
-	  else if(cn == 'volume'){
-	    return("volume")
-	  }
 	  
-	}
-	
-	checkAddMul <- function(x){
-	  da <- decompose(x,"additive")
-	  dm <- decompose(x,"multiplicative")
-	  ts_type = compare_ssacf(da$random, dm$random)
-	  return(ts_type)
-	}
-	
-	#Ref: https://www.r-bloggers.com/is-my-time-series-additive-or-multiplicative/
-	ssacf<- function(x) { sum(acf(x, na.action = na.omit)$acf^2)}
-	
-	compare_ssacf<-function(add,mult) {ifelse(ssacf(add)< ssacf(mult), "additive", "multiplicative")} 
-	
 }
 
 # Create Shiny app ----
